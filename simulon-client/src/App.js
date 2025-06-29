@@ -26,6 +26,7 @@ export default function App() {
   const startLoop = async () => {
     if (!query.trim()) return;
     setLoading(true);
+    setThoughts([]); // Reset thoughts before starting the loop
 
     try {
       const results = await fetchFromBackend(query);
@@ -82,15 +83,17 @@ export default function App() {
         {loading ? "Thinking..." : "Think"}
       </button>
 
-      console.log(thoughts); // Log the thoughts array  
-
       <div className="mt-10 w-full max-w-2xl">
-        {thoughts.map((t, idx) => (
-          <div key={idx} className="mb-6 border-b border-gray-700 pb-4">
-            <p className="text-sm text-gray-400">💭 {t.q}</p>
-            <p className="mt-2 whitespace-pre-wrap">{t.a}</p>
-          </div>
-        ))}
+        {thoughts.map((t, idx) => {
+          // Skip rendering incomplete data
+          if (!t || !t.q || !t.a) return null;
+          return (
+            <div key={idx} className="mb-6 border-b border-gray-700 pb-4">
+              <p className="text-sm text-gray-400">💭 {t.q}</p>
+              <p className="mt-2 whitespace-pre-wrap">{t.a}</p>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
