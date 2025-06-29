@@ -1,48 +1,66 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
+import { v4 as uuidv4 } from "uuid";
 import "./index.css";
 
 export default function App() {
   const [query, setQuery] = useState("");
   const [thoughts, setThoughts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const sessionId = useRef(uuidv4());
 
-  const fetchFromBackend = async (query) => {
-    const response = await fetch('https://simulon-api.onrender.com/api/think', {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ query }), // Must match backend expected shape
-    });
+  const fetchFromBackend = async (queryOrMessages, isRawMessage = false) => {
+    try {
+      const body = isRawMessage
+        ? { sessionId: sessionId.current, messages: JSON.parse(queryOrMessages) }
+        : { sessionId: sessionId.current, query: queryOrMessages };
 
-    if (!response.ok) {
-      throw new Error(Server responded with status ${response.status});
+      const response = await fetch("https://simulon-api.onrender.com/api/think", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      return data.result?.trim() || "(No response)";
+    } catch (error) {
+      console.error("Fetch error:", error);
+      return "(Failed to fetch response)";
     }
-
-    const data = await response.json();
-    return data.results;
   };
 
   const startLoop = async () => {
     if (!query.trim()) return;
     setLoading(true);
 
-    try {
-      const results = await fetchFromBackend(query);
+    const contextEvalPrompt = `Given the following input, describe the assistant's identity in the format: 'You are a ...'. Input: ${query}`;
+    const systemMessage = await fetchFromBackend(contextEvalPrompt);
+    let currentContext = [
+      { role: "system", content: systemMessage },
+      { role: "user", content: query },
+    ];
 
-      if (!Array.isArray(results)) {
-        throw new Error("Unexpected response format");
-      }
+    for (let i = 0; i < 10; i++) {
+      const followupPrompt = [
+        ...currentContext,
+        { role: "user", content: "Based on our conversation so far, suggest a specific, intelligent follow-up question." },
+      ];
+      const newQuestion = await fetchFromBackend(JSON.stringify(followupPrompt), true);
 
-      setThoughts(results);
-    } catch (error) {
-      console.error("API error:", error);
-      setThoughts([
-        { q: "(Failed to fetch response)", a: "(Failed to fetch response)" },
-      ]);
-    } finally {
-      setLoading(false);
+      const answerPrompt = [
+        ...currentContext,
+        { role: "user", content: newQuestion },
+        { role: "system", content: "Respond concisely in about 10 lines as a thoughtful paragraph." },
+      ];
+      const newAnswer = await fetchFromBackend(JSON.stringify(answerPrompt), true);
+
+      setThoughts(prev => [...prev, { q: newQuestion, a: newAnswer }]);
+
+      currentContext.push({ role: "user", content: newQuestion });
+      currentContext.push({ role: "assistant", content: newAnswer });
     }
+
+    setLoading(false);
+    setQuery("");
   };
 
   const handleKeyDown = (e) => {
