@@ -7,12 +7,12 @@ export default function App() {
   const [loading, setLoading] = useState(false);
 
   const fetchFromBackend = async (query) => {
-    const response = await fetch(`https://simulon-api.onrender.com/api/think`, {
+    const response = await fetch("https://simulon-api.onrender.com/api/think", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ query }), // Must match backend expected shape
+      body: JSON.stringify({ query }),
     });
 
     if (!response.ok) {
@@ -20,7 +20,7 @@ export default function App() {
     }
 
     const data = await response.json();
-    return data.results;
+    return data.results; // The result will be an array of question/answer pairs
   };
 
   const startLoop = async () => {
@@ -34,7 +34,18 @@ export default function App() {
         throw new Error("Unexpected response format");
       }
 
-      setThoughts(results);
+      let idx = 0;
+
+      // Set interval to update thoughts one by one
+      const intervalId = setInterval(() => {
+        if (idx < results.length) {
+          setThoughts((prevThoughts) => [...prevThoughts, results[idx]]);
+          idx++;
+        } else {
+          clearInterval(intervalId); // Stop the interval once all results are added
+        }
+      }, 1000); // Updates every second (you can adjust this speed)
+
     } catch (error) {
       console.error("API error:", error);
       setThoughts([
