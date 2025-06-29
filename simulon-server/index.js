@@ -1,10 +1,9 @@
-// index.js — Adjusted to return correct response format
+// simulon-server/index.js
 
 import express from "express";
-import cors from "cors";
-import bodyParser from "body-parser";
 import dotenv from "dotenv";
-import { Configuration, OpenAIApi } from "openai";
+import cors from "cors";
+import OpenAI from "openai";
 
 dotenv.config();
 
@@ -12,82 +11,92 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-const openai = new OpenAIApi(configuration);
 
-const fetchChatGPT = async (messages) => {
-  const completion = await openai.createChatCompletion({
+// Utility to get a context string
+const getContext = async (content) => {
+  const response = await openai.chat.completions.create({
     model: "gpt-4",
-    messages,
+    messages: [
+      {
+        role: "user",
+        content:
+          `Given the following query or dialogue, respond with "You are a ..." followed by a concise AI persona description. Just the sentence starting with "You are a ...".\n\nQuery:\n${content}`,
+      },
+    ],
   });
-  return completion.data.choices[0].message.content.trim();
+
+  const result = response.choices?.[0]?.message?.content?.trim();
+  console.log("🧠 Context set:", result);
+  return result || "You are a helpful assistant.";
 };
 
 app.post("/api/think", async (req, res) => {
-  const { rootQuery } = req.body;
-  if (!rootQuery) return res.status(400).json({ error: "Missing rootQuery" });
+  const { query } = req.body;
+
+  if (!query) {
+    return res.status(400).json({ error: "No query provided." });
+  }
 
   try {
-    // Initial context evaluation
-    const identityMsg = await fetchChatGPT([
-      {
-        role: "user",
-        content: `You are Simulon, based on the query: '${rootQuery}', complete this sentence exactly: You are a ...`,
-      },
-    ]);
-    console.log("You are a", identityMsg);
+    const contextLine = await getContext(query);
 
-    let context = [
-      { role: "system", content: identityMsg },
-      { role: "user", content: rootQuery },
+    const baseMessages = [
+      { role: "system", content: contextLine },
+      { role: "user", content: query },
     ];
 
-    const results = [];
+    const qaPairs = [];
+
+    let currentContext = [...baseMessages];
 
     for (let i = 0; i < 10; i++) {
-      const followUpPrompt = [
-        ...context,
-        {
-          role: "user",
-          content:
-            "Based on our conversation, generate a single intelligent follow-up question.",
-        },
-      ];
+      // Ask for follow-up question
+      const followUpResponse = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          ...currentContext,
+          {
+            role: "user",
+            content: "Based on our conversation, generate a follow-up question.",
+          },
+        ],
+      });
 
-      const followUpQ = await fetchChatGPT(followUpPrompt);
+      const followUp = followUpResponse.choices?.[0]?.message?.content?.trim();
 
-      const answerPrompt = [
-        { role: "system", content: "Respond concisely in about 10 lines." },
-        { role: "user", content: followUpQ },
-      ];
+      // Ask for answer
+      const answerResponse = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: "Respond in a clear paragraph." },
+          { role: "user", content: followUp },
+        ],
+      });
 
-      const answer = await fetchChatGPT(answerPrompt);
-      results.push({ q: followUpQ, a: answer });
+      const answer = answerResponse.choices?.[0]?.message?.content?.trim();
 
-      // Optional: reevaluate identity
-      const newIdentity = await fetchChatGPT([
-        {
-          role: "user",
-          content: `You are Simulon, based on the question '${followUpQ}' and answer '${answer}', complete this sentence exactly: You are a ...`,
-        },
-      ]);
-      console.log("You are a", newIdentity);
+      qaPairs.push({ q: followUp, a: answer });
 
-      context.push({ role: "assistant", content: followUpQ });
-      context.push({ role: "assistant", content: answer });
+      currentContext.push({ role: "user", content: followUp });
+      currentContext.push({ role: "assistant", content: answer });
+
+      // Optionally re-evaluate context at each step
+      const newContextLine = await getContext(followUp + "\n" + answer);
+      currentContext.unshift({ role: "system", content: newContextLine });
     }
 
-    res.json({ results });
+    return res.json({ results: qaPairs });
   } catch (err) {
-    console.error("API error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("Error in /api/think:", err.message);
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
 app.listen(port, () => {
-  console.log(`Simulon server listening on http://localhost:${port}`);
+  console.log(`🚀 Simulon server listening on http://localhost:${port}`);
 });
