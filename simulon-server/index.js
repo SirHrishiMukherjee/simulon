@@ -97,10 +97,6 @@ app.post("/api/think", async (req, res) => {
       res.write(JSON.stringify({ q: followUp, a: answer }));
       first = false;
 
-      // Optionally re-evaluate context at each step
-      const newContextLine = await getContext(followUp + "\n" + answer);
-      currentContext.unshift({ role: "system", content: newContextLine });
-
       // Simulate delay between questions/answers
       await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay
     }
