@@ -1,19 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import "./index.css";
 
 export default function App() {
   const [query, setQuery] = useState("");
   const [thoughts, setThoughts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [sessionId, setSessionId] = useState("");
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    // Generate a unique session ID on load
-    const newSessionId = crypto.randomUUID();
-    setSessionId(newSessionId);
-  }, []);
-
-  const apiBase = process.env.REACT_APP_API_BASE || "http://localhost:5000";
+  const sessionId = crypto.randomUUID(); // simple unique session ID
+  const apiBase = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
   const fetchFromBackend = async (rootQuery) => {
     const response = await fetch(`${apiBase}/api/think`, {
@@ -27,23 +22,32 @@ export default function App() {
       }),
     });
 
+    if (!response.ok) {
+      throw new Error(`Server responded with status ${response.status}`);
+    }
+
     const data = await response.json();
-    return data.results; // array of { q, a }
+    if (!data || !Array.isArray(data.results)) {
+      throw new Error("Unexpected response format");
+    }
+
+    return data.results;
   };
 
   const startLoop = async () => {
     if (!query.trim()) return;
     setLoading(true);
+    setError(null);
+    setThoughts([]);
+
     try {
       const results = await fetchFromBackend(query);
       setThoughts(results);
     } catch (err) {
-      setThoughts([
-        ...thoughts,
-        { q: "(Failed to fetch response)", a: "(Failed to fetch response)" },
-      ]);
-      console.error("Fetch error:", err);
+      console.error("API error:", err);
+      setError("💥 Failed to fetch response from server.");
     }
+
     setLoading(false);
     setQuery("");
   };
@@ -78,13 +82,19 @@ export default function App() {
         {loading ? "Thinking..." : "Think"}
       </button>
 
+      {error && <p className="text-red-500 mt-4">{error}</p>}
+
       <div className="mt-10 w-full max-w-2xl">
-        {thoughts.map((t, idx) => (
-          <div key={idx} className="mb-6 border-b border-gray-700 pb-4">
-            <p className="text-sm text-gray-400">💭 {t.q}</p>
-            <p className="mt-2 whitespace-pre-wrap">{t.a}</p>
-          </div>
-        ))}
+        {Array.isArray(thoughts) &&
+          thoughts.map((t, idx) => (
+            <div
+              key={idx}
+              className="mb-6 border-b border-gray-700 pb-4"
+            >
+              <p className="text-sm text-gray-400">💭 {t.q}</p>
+              <p className="mt-2 whitespace-pre-wrap">{t.a}</p>
+            </div>
+          ))}
       </div>
     </div>
   );
