@@ -1,54 +1,90 @@
+// index.js — Adjusted to return correct response format
+
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
-import { OpenAI } from "openai";
 import dotenv from "dotenv";
+import { Configuration, OpenAIApi } from "openai";
 
 dotenv.config();
 
 const app = express();
-const port = 5000;
+const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(bodyParser.json());
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const contextStore = new Map(); // Map of sessionId -> message history
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+const openai = new OpenAIApi(configuration);
+
+const fetchChatGPT = async (messages) => {
+  const completion = await openai.createChatCompletion({
+    model: "gpt-4",
+    messages,
+  });
+  return completion.data.choices[0].message.content.trim();
+};
 
 app.post("/api/think", async (req, res) => {
-  const { sessionId, query, messages } = req.body;
-
-  if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
-
-  let context = contextStore.get(sessionId) || [
-    { role: "system", content: "You are Simulon, a mind-expanding AI." }
-  ];
-
-  if (query) {
-    context.push({ role: "user", content: query });
-  } else if (messages) {
-    context = messages;
-  }
+  const { rootQuery } = req.body;
+  if (!rootQuery) return res.status(400).json({ error: "Missing rootQuery" });
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: context,
-      temperature: 0.7,
-    });
+    // Initial context evaluation
+    const identityMsg = await fetchChatGPT([
+      {
+        role: "user",
+        content: `You are Simulon, based on the query: '${rootQuery}', complete this sentence exactly: You are a ...`,
+      },
+    ]);
+    console.log("You are a", identityMsg);
 
-    const reply = completion.choices[0].message.content;
-    context.push({ role: "assistant", content: reply });
-    contextStore.set(sessionId, context);
+    let context = [
+      { role: "system", content: identityMsg },
+      { role: "user", content: rootQuery },
+    ];
 
-    if (reply.startsWith("You are a") || reply.startsWith("You are an")) {
-      console.log(`[Context Evaluation] ${reply}`);
+    const results = [];
+
+    for (let i = 0; i < 10; i++) {
+      const followUpPrompt = [
+        ...context,
+        {
+          role: "user",
+          content:
+            "Based on our conversation, generate a single intelligent follow-up question.",
+        },
+      ];
+
+      const followUpQ = await fetchChatGPT(followUpPrompt);
+
+      const answerPrompt = [
+        { role: "system", content: "Respond concisely in about 10 lines." },
+        { role: "user", content: followUpQ },
+      ];
+
+      const answer = await fetchChatGPT(answerPrompt);
+      results.push({ q: followUpQ, a: answer });
+
+      // Optional: reevaluate identity
+      const newIdentity = await fetchChatGPT([
+        {
+          role: "user",
+          content: `You are Simulon, based on the question '${followUpQ}' and answer '${answer}', complete this sentence exactly: You are a ...`,
+        },
+      ]);
+      console.log("You are a", newIdentity);
+
+      context.push({ role: "assistant", content: followUpQ });
+      context.push({ role: "assistant", content: answer });
     }
 
-    res.json({ result: reply });
-  } catch (error) {
-    console.error("OpenAI API error:", error);
-    res.status(500).json({ error: "Something went wrong" });
+    res.json({ results });
+  } catch (err) {
+    console.error("API error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
