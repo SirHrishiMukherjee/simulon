@@ -27,6 +27,8 @@ export default function App() {
     }
 
     const data = await response.json();
+    console.log("Raw API response:", data);
+    
     if (!data || !Array.isArray(data.results)) {
       throw new Error("Unexpected response format");
     }
