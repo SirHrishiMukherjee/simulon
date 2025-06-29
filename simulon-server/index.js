@@ -51,9 +51,13 @@ app.post("/api/think", async (req, res) => {
     ];
 
     const qaPairs = [];
-
     let currentContext = [...baseMessages];
 
+    // Set up a response stream
+    res.setHeader('Content-Type', 'application/json');
+    res.write('{"results":['); // Start of the JSON array
+
+    let first = true;
     for (let i = 0; i < 10; i++) {
       // Ask for follow-up question
       const followUpResponse = await openai.chat.completions.create({
@@ -69,7 +73,7 @@ app.post("/api/think", async (req, res) => {
 
       const followUp = followUpResponse.choices?.[0]?.message?.content?.trim();
 
-      // Ask for answer
+      // Ask for the answer
       const answerResponse = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [
@@ -85,12 +89,25 @@ app.post("/api/think", async (req, res) => {
       currentContext.push({ role: "user", content: followUp });
       currentContext.push({ role: "assistant", content: answer });
 
+      // Send each result progressively
+      if (!first) {
+        res.write(','); // Add a comma between results
+      }
+
+      res.write(JSON.stringify({ q: followUp, a: answer }));
+      first = false;
+
       // Optionally re-evaluate context at each step
       const newContextLine = await getContext(followUp + "\n" + answer);
       currentContext.unshift({ role: "system", content: newContextLine });
+
+      // Simulate delay between questions/answers
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay
     }
 
-    return res.json({ results: qaPairs });
+    res.write(']}'); // End of the JSON array
+    res.end();
+
   } catch (err) {
     console.error("Error in /api/think:", err.message);
     return res.status(500).json({ error: "Internal server error" });
