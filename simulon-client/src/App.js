@@ -7,7 +7,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
 
   const fetchFromBackend = async (query) => {
-    const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/think`, {
+    const response = await fetch(`https://simulon-api.onrender.com/api/think`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
