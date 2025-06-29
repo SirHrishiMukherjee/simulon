@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: simulon-server
+    env: node
+    buildCommand: cd simulon-server && npm install && cd ../simulon-client && npm install && npm run build
+    startCommand: cd simulon-server && npm start
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
