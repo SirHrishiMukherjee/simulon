@@ -8,7 +8,7 @@ export default function App() {
   const [error, setError] = useState(null);
 
   const sessionId = crypto.randomUUID(); // simple unique session ID
-  const apiBase = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+  const apiBase = "https://simulon-server.onrender.com";
 
   const fetchFromBackend = async (rootQuery) => {
     const response = await fetch(`${apiBase}/api/think`, {
