@@ -1,102 +1,57 @@
-// simulon-server/index.js
-
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
-import OpenAI from "openai";
+import bodyParser from "body-parser";
+import { OpenAI } from "openai";
+import dotenv from "dotenv";
 
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 5000;
+const port = 5000;
 
 app.use(cors());
-app.use(express.json());
+app.use(bodyParser.json());
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Utility to get a context string
-const getContext = async (content) => {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4",
-    messages: [
-      {
-        role: "user",
-        content:
-          Given the following query or dialogue, respond with "You are a ..." followed by a concise AI persona description. Just the sentence starting with "You are a ...".\n\nQuery:\n${content},
-      },
-    ],
-  });
-
-  const result = response.choices?.[0]?.message?.content?.trim();
-  console.log("🧠 Context set:", result);
-  return result || "You are a helpful assistant.";
-};
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const contextStore = new Map(); // Map of sessionId -> message history
 
 app.post("/api/think", async (req, res) => {
-  const { query } = req.body;
+  const { sessionId, query, messages } = req.body;
 
-  if (!query) {
-    return res.status(400).json({ error: "No query provided." });
+  if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
+
+  let context = contextStore.get(sessionId) || [
+    { role: "system", content: "You are Simulon, a mind-expanding AI." }
+  ];
+
+  if (query) {
+    context.push({ role: "user", content: query });
+  } else if (messages) {
+    context = messages;
   }
 
   try {
-    const contextLine = await getContext(query);
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: context,
+      temperature: 0.7,
+    });
 
-    const baseMessages = [
-      { role: "system", content: contextLine },
-      { role: "user", content: query },
-    ];
+    const reply = completion.choices[0].message.content;
+    context.push({ role: "assistant", content: reply });
+    contextStore.set(sessionId, context);
 
-    const qaPairs = [];
-
-    let currentContext = [...baseMessages];
-
-    for (let i = 0; i < 10; i++) {
-      // Ask for follow-up question
-      const followUpResponse = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          ...currentContext,
-          {
-            role: "user",
-            content: "Based on our conversation, generate a follow-up question.",
-          },
-        ],
-      });
-
-      const followUp = followUpResponse.choices?.[0]?.message?.content?.trim();
-
-      // Ask for answer
-      const answerResponse = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          { role: "system", content: "Respond in a clear paragraph." },
-          { role: "user", content: followUp },
-        ],
-      });
-
-      const answer = answerResponse.choices?.[0]?.message?.content?.trim();
-
-      qaPairs.push({ q: followUp, a: answer });
-
-      currentContext.push({ role: "user", content: followUp });
-      currentContext.push({ role: "assistant", content: answer });
-
-      // Optionally re-evaluate context at each step
-      const newContextLine = await getContext(followUp + "\n" + answer);
-      currentContext.unshift({ role: "system", content: newContextLine });
+    if (reply.startsWith("You are a") || reply.startsWith("You are an")) {
+      console.log(`[Context Evaluation] ${reply}`);
     }
 
-    return res.json({ results: qaPairs });
-  } catch (err) {
-    console.error("Error in /api/think:", err.message);
-    return res.status(500).json({ error: "Internal server error" });
+    res.json({ result: reply });
+  } catch (error) {
+    console.error("OpenAI API error:", error);
+    res.status(500).json({ error: "Something went wrong" });
   }
 });
 
 app.listen(port, () => {
-  console.log(🚀 Simulon server listening on http://localhost:${port});
+  console.log(`Simulon server listening on http://localhost:${port}`);
 });
