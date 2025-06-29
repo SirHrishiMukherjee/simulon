@@ -5,21 +5,14 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [thoughts, setThoughts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
 
-  const sessionId = crypto.randomUUID(); // simple unique session ID
-  const apiBase = "https://simulon-api.onrender.com";
-
-  const fetchFromBackend = async (rootQuery) => {
-    const response = await fetch(`${apiBase}/api/think`, {
+  const fetchFromBackend = async (query) => {
+    const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/think`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        sessionId,
-        rootQuery,
-      }),
+      body: JSON.stringify({ query }), // Must match backend expected shape
     });
 
     if (!response.ok) {
@@ -27,31 +20,29 @@ export default function App() {
     }
 
     const data = await response.json();
-    console.log("Raw API response:", data);
-    
-    if (!data || !Array.isArray(data.results)) {
-      throw new Error("Unexpected response format");
-    }
-
     return data.results;
   };
 
   const startLoop = async () => {
     if (!query.trim()) return;
     setLoading(true);
-    setError(null);
-    setThoughts([]);
 
     try {
       const results = await fetchFromBackend(query);
-      setThoughts(results);
-    } catch (err) {
-      console.error("API error:", err);
-      setError("💥 Failed to fetch response from server.");
-    }
 
-    setLoading(false);
-    setQuery("");
+      if (!Array.isArray(results)) {
+        throw new Error("Unexpected response format");
+      }
+
+      setThoughts(results);
+    } catch (error) {
+      console.error("API error:", error);
+      setThoughts([
+        { q: "(Failed to fetch response)", a: "(Failed to fetch response)" },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -60,11 +51,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col items-center pt-16 px-4">
-      <img
-        src="/simulon-logo.png"
-        alt="Simulon Logo"
-        className="w-28 h-auto mb-4 drop-shadow-lg"
-      />
+      <img src="/simulon-logo.png" alt="Simulon Logo" className="w-28 h-auto mb-4 drop-shadow-lg" />
       <h1 className="text-3xl font-bold mb-6">Simulon</h1>
 
       <input
@@ -84,19 +71,13 @@ export default function App() {
         {loading ? "Thinking..." : "Think"}
       </button>
 
-      {error && <p className="text-red-500 mt-4">{error}</p>}
-
       <div className="mt-10 w-full max-w-2xl">
-        {Array.isArray(thoughts) &&
-          thoughts.map((t, idx) => (
-            <div
-              key={idx}
-              className="mb-6 border-b border-gray-700 pb-4"
-            >
-              <p className="text-sm text-gray-400">💭 {t.q}</p>
-              <p className="mt-2 whitespace-pre-wrap">{t.a}</p>
-            </div>
-          ))}
+        {thoughts.map((t, idx) => (
+          <div key={idx} className="mb-6 border-b border-gray-700 pb-4">
+            <p className="text-sm text-gray-400">💭 {t.q}</p>
+            <p className="mt-2 whitespace-pre-wrap">{t.a}</p>
+          </div>
+        ))}
       </div>
     </div>
   );
