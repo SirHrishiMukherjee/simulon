@@ -50,14 +50,16 @@ app.post("/api/think", async (req, res) => {
       { role: "user", content: query },
     ];
 
-    const qaPairs = [];
     let currentContext = [...baseMessages];
 
-    // Set up a response stream
-    res.setHeader('Content-Type', 'application/json');
-    res.write('{"results":['); // Start of the JSON array
+    // Set up SSE stream
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders(); // Necessary to send initial response headers
 
     let first = true;
+
     for (let i = 0; i < 10; i++) {
       // Ask for follow-up question
       const followUpResponse = await openai.chat.completions.create({
@@ -84,24 +86,25 @@ app.post("/api/think", async (req, res) => {
 
       const answer = answerResponse.choices?.[0]?.message?.content?.trim();
 
-      qaPairs.push({ q: followUp, a: answer });
+      // Send each question-answer pair to the client incrementally
+      const message = JSON.stringify({ q: followUp, a: answer });
+
+      // Write the message in SSE format
+      res.write(`data: ${message}\n\n`);
 
       currentContext.push({ role: "user", content: followUp });
       currentContext.push({ role: "assistant", content: answer });
 
-      // Send each result progressively
-      if (!first) {
-        res.write(','); // Add a comma between results
-      }
+      // Optionally re-evaluate context at each step
+      const newContextLine = await getContext(followUp + "\n" + answer);
+      currentContext.unshift({ role: "system", content: newContextLine });
 
-      res.write(JSON.stringify({ q: followUp, a: answer }));
-      first = false;
-
-      // Simulate delay between questions/answers
+      // Simulate delay between questions/answers (optional)
       await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay
     }
 
-    res.write(']}'); // End of the JSON array
+    // End the SSE stream after all messages are sent
+    res.write('data: [DONE]\n\n');
     res.end();
 
   } catch (err) {
