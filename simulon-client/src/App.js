@@ -82,6 +82,8 @@ export default function App() {
         {loading ? "Thinking..." : "Think"}
       </button>
 
+      console.log(thoughts); // Log the thoughts array  
+
       <div className="mt-10 w-full max-w-2xl">
         {thoughts.map((t, idx) => (
           <div key={idx} className="mb-6 border-b border-gray-700 pb-4">
