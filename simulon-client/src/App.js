@@ -6,55 +6,34 @@ export default function App() {
   const [thoughts, setThoughts] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const fetchFromBackend = async (query) => {
-    const response = await fetch("https://simulon-api.onrender.com/api/think", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ query }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Server responded with status ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.results; // The result will be an array of question/answer pairs
-  };
-
-  const startLoop = async () => {
+  const startLoop = () => {
     if (!query.trim()) return;
     setLoading(true);
     setThoughts([]); // Reset thoughts before starting the loop
 
-    try {
-      const results = await fetchFromBackend(query);
+    // Create a new EventSource to listen for SSE data
+    const eventSource = new EventSource(`https://simulon-api.onrender.com/api/think`, {
+      method: "POST",
+      body: JSON.stringify({ query }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
 
-      if (!Array.isArray(results)) {
-        throw new Error("Unexpected response format");
+    eventSource.onmessage = function (event) {
+      const data = JSON.parse(event.data);
+      if (data === "[DONE]") {
+        eventSource.close(); // Close connection after all messages are sent
+        setLoading(false);
+      } else {
+        setThoughts((prevThoughts) => [...prevThoughts, data]); // Append each new QA pair
       }
+    };
 
-      let idx = 0;
-
-      // Set interval to update thoughts one by one
-      const intervalId = setInterval(() => {
-        if (idx < results.length) {
-          setThoughts((prevThoughts) => [...prevThoughts, results[idx]]);
-          idx++;
-        } else {
-          clearInterval(intervalId); // Stop the interval once all results are added
-        }
-      }, 1000); // Updates every second (you can adjust this speed)
-
-    } catch (error) {
-      console.error("API error:", error);
-      setThoughts([
-        { q: "(Failed to fetch response)", a: "(Failed to fetch response)" },
-      ]);
-    } finally {
+    eventSource.onerror = function (error) {
+      console.error("Error in SSE:", error);
       setLoading(false);
-    }
+    };
   };
 
   const handleKeyDown = (e) => {
@@ -85,8 +64,7 @@ export default function App() {
 
       <div className="mt-10 w-full max-w-2xl">
         {thoughts.map((t, idx) => {
-          // Skip rendering incomplete data
-          if (!t || !t.q || !t.a) return null;
+          if (!t || !t.q || !t.a) return null; // Skip rendering incomplete data
           return (
             <div key={idx} className="mb-6 border-b border-gray-700 pb-4">
               <p className="text-sm text-gray-400">💭 {t.q}</p>
